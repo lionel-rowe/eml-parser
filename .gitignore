@@ -1,3 +1,5 @@
 # IDE Ordner
 .idea/
 nbproject
+# some weird MS thing auto-created by selecting .eml files in Explorer
+*:OECustomProperty

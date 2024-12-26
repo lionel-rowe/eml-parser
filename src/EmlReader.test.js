@@ -13,6 +13,7 @@ const fixtures = {
     sample_sans_plain: "./src/_fixtures/sample_sans_plain.eml",
     cc: "./src/_fixtures/cc.eml",
     multipart: "./src/_fixtures/multipart.eml",
+    attachment_filenames: "./src/_fixtures/attachment_filenames.eml",
 };
 
 describe(EmlReader.name, () => {
@@ -129,6 +130,33 @@ describe(EmlReader.name, () => {
             assert.deepEqual(content.byteLength, expectedByteLength);
             assert.deepEqual(attachments[0].filesize, content.byteLength);
             assert.deepEqual(Buffer.from(content), await fs.readFile('./src/_fixtures/tired_boot.FJ010019.jpeg'));
+        });
+    });
+
+    describe(basename(fixtures.attachment_filenames), async () => {
+        const eml = new EmlReader(await fs.readFile(fixtures.attachment_filenames));
+
+        it(eml.getAttachments.name, async () => {
+            const attachments = eml.getAttachments();
+
+            const expectedFilenames = [
+                'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345.txt',
+                '文字.txt',
+                '£ rates.txt',
+                '文字'.repeat(100) + '.txt',
+                'a.txt',
+                'b.txt',
+                'c.txt',
+                'd.txt',
+                'e.txt',
+            ];
+
+            assert.deepEqual(attachments.length, expectedFilenames.length);
+
+            for (const [idx, filename] of expectedFilenames.entries()) {
+                assert.deepEqual(attachments[idx].filename, filename);
+                assert.deepEqual(attachments[idx].contentType, 'text/plain');
+            }
         });
     });
 });

@@ -160,22 +160,63 @@ export class MultiPartParser {
         return this.#multiParts;
     }
 
+    #getFileName({groups}, i) {
+        const idx = Number(groups.idx || -1);
+        if (idx !== -1 && idx !== i) throw new RangeError('Wrong index');
+
+        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition#as_a_response_header_for_the_main_body
+        // > filename* uses the encoding defined in RFC 5987, section 3.2
+        const useRfc5987 = Boolean(groups.star);
+        if (!useRfc5987) {
+            return groups.content.split('\n').map((x) => this.#decodeRfc1342(x.trim())).join('');
+        }
+
+        const [encoding, content] = groups.content.split(/'[a-z\-]*'/i);
+        if (!content) return groups.content;
+
+        const bytes = Uint8Array.from(
+            content.match(/%\p{AHex}{2}|./gsu) ?? [],
+            (x) => x.startsWith('%') ? parseInt(x.slice(1), 16) : x.codePointAt(0),
+        );
+
+        return new TextDecoder(encoding).decode(bytes);
+    }
+
+    /**
+     * @param {string} headerName
+     * @param {string} propKey
+     */
+    #getProp(headerName, propKey) {
+        const [header] = this.getHeaders(headerName);
+
+        if (!header) return null;
+        const regex = new RegExp(String.raw`${propKey}(?<star>\*)?(?<idx>\d+)?="?(?<content>[^";]+)"?`, 'gi');
+        /** @type {{groups: { idx: string, star: string, content: string}}[]} */
+        const matches = [...header.matchAll(regex)];
+
+        if (!matches.length) return null;
+
+        /** @type {typeof matches} */
+        let filtered = [];
+
+        filtered = matches.filter((x) => !x.groups.idx);
+        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition#as_a_response_header_for_the_main_body
+        // > When both filename and filename* are present in a single header field value, filename* is preferred over filename when both are understood
+        if (filtered.length > 1) filtered = filtered.filter((x) => x.groups.star);
+        if (filtered.length === 1) {
+            return this.#getFileName(filtered[0], 0);
+        }
+        filtered = matches.filter((x) => x.groups.idx);
+
+        return filtered.map(this.#getFileName.bind(this)).join('');
+    }
+
     /**
      * returns the filename of the content, if found
-     * @returns {string}
      */
     getFilename() {
-        let [cd] = this.getHeaders('Content-Disposition'), cdM = cd && cd.match(/filename=\"?([^"\n]+)\"?/i);
-        if (cdM) {
-            return this.#decodeRfc1342(cdM[1]);
-        }
-
-        let [ct] = this.getHeaders('Content-Type'), ctM = ct && ct.match(/name=\"?([^"\n]+)\"?/i);
-        if (ctM) {
-            return this.#decodeRfc1342(ctM[1]);
-        }
-
-        return null;
+        const match = this.#getProp('Content-Disposition', 'filename') ?? this.#getProp('Content-Type', 'name');
+        return match ?? null;
     }
 
     // *******************
